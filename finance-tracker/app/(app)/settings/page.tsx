@@ -15,17 +15,17 @@ export default function SettingsPage() {
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-  
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
-  
+
     if (!user) {
       setSaving(false);
       alert("User not found.");
       return;
     }
-  
+
     const { error } = await supabase
       .from("profiles")
       .update({
@@ -36,14 +36,14 @@ export default function SettingsPage() {
         updated_at: new Date().toISOString(),
       })
       .eq("id", user.id);
-  
+
     setSaving(false);
-  
+
     if (error) {
       alert(error.message);
       return;
     }
-  
+
     alert("Settings saved successfully.");
   }
 
@@ -53,7 +53,10 @@ export default function SettingsPage() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
       const { data, error } = await supabase
         .from("profiles")
@@ -85,11 +88,20 @@ export default function SettingsPage() {
   return (
     <div className="px-6 py-10">
       <div className="mx-auto max-w-3xl">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold">Settings</h1>
-          <p className="mt-2 text-zinc-400">
-            Manage your profile and app preferences.
-          </p>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold">Settings</h1>
+            <p className="mt-2 text-zinc-400">
+              Manage your profile and app preferences.
+            </p>
+          </div>
+
+          <Link
+            href="/more"
+            className="rounded-full border border-zinc-700 px-5 py-3 text-sm font-semibold text-white"
+          >
+            Back to More
+          </Link>
         </div>
 
         <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
@@ -145,20 +157,30 @@ export default function SettingsPage() {
             </div>
 
             <button
-  type="submit"
-  disabled={saving}
-  className="w-full rounded-full bg-white px-6 py-3 font-semibold text-black disabled:opacity-50"
->
-  {saving ? "Saving..." : "Save Settings"}
-</button>
+              type="submit"
+              disabled={saving}
+              className="w-full rounded-full bg-white px-6 py-3 font-semibold text-black disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save Settings"}
+            </button>
           </form>
         </div>
 
         <div className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
-          <h2 className="text-xl font-semibold">More Pages</h2>
-          <div className="mt-4 flex flex-col gap-3 text-sm">
-            <Link href="/add-transaction" className="text-zinc-300 hover:text-white">
-              Add Transaction
+          <h2 className="text-xl font-semibold">Quick Access</h2>
+
+          <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+            <Link href="/dashboard" className="text-zinc-300 hover:text-white">
+              Dashboard
+            </Link>
+            <Link href="/wallets" className="text-zinc-300 hover:text-white">
+              Wallets
+            </Link>
+            <Link href="/transactions" className="text-zinc-300 hover:text-white">
+              Transactions
+            </Link>
+            <Link href="/budgets" className="text-zinc-300 hover:text-white">
+              Budgets
             </Link>
             <Link href="/savings-goals" className="text-zinc-300 hover:text-white">
               Savings Goals
@@ -168,6 +190,9 @@ export default function SettingsPage() {
             </Link>
             <Link href="/recurring-bills" className="text-zinc-300 hover:text-white">
               Recurring Bills
+            </Link>
+            <Link href="/net-worth" className="text-zinc-300 hover:text-white">
+              Net Worth
             </Link>
           </div>
         </div>

@@ -62,11 +62,12 @@ export default function AppLayout({
 
           <div className="flex items-center gap-6">
             <nav className="flex items-center gap-4 text-sm">
-              <NavLink href="/dashboard">Dashboard</NavLink>
-              <NavLink href="/transactions">Transactions</NavLink>
-              <NavLink href="/wallets">Wallets</NavLink>
-              <NavLink href="/budgets">Budgets</NavLink>
-              <NavLink href="/settings">More</NavLink>
+            <NavLink href="/dashboard">Dashboard</NavLink>
+            <NavLink href="/net-worth">Net Worth</NavLink>
+            <NavLink href="/transactions">Transactions</NavLink>
+            <NavLink href="/wallets">Wallets</NavLink>
+            <NavLink href="/budgets">Budgets</NavLink>
+            <NavLink href="/more">More</NavLink>
             </nav>
 
             <button

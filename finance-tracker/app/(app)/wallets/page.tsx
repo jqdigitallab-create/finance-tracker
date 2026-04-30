@@ -1,71 +1,69 @@
 "use client";
-import { recalculateWalletBalance } from "@/lib/recalculateWalletBalance";
-import { useEffect, useState } from "react";
+
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { formatCurrency } from "@/lib/formatCurrency";
 
 type Wallet = {
   id: string;
   wallet_name: string;
-  wallet_type: string;
-  currency: string | null;
+  wallet_type: "cash" | "bank" | "ewallet" | "credit_card" | "other";
   current_balance: number | null;
+  currency: string | null;
 };
+
+function getErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return "Something went wrong.";
+}
 
 export default function WalletsPage() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const [walletName, setWalletName] = useState("");
-  const [walletType, setWalletType] = useState("Cash");
+  const [walletType, setWalletType] = useState<
+    "cash" | "bank" | "ewallet" | "credit_card" | "other"
+  >("bank");
+  const [currentBalance, setCurrentBalance] = useState("");
   const [currency, setCurrency] = useState("MYR");
-  const [startingBalance, setStartingBalance] = useState("");
+
+  const [editWalletName, setEditWalletName] = useState("");
+  const [editWalletType, setEditWalletType] = useState<
+    "cash" | "bank" | "ewallet" | "credit_card" | "other"
+  >("bank");
+  const [editCurrentBalance, setEditCurrentBalance] = useState("");
+  const [editCurrency, setEditCurrency] = useState("MYR");
 
   async function fetchWallets() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
-  
+
     if (!user) {
       setLoading(false);
       return;
     }
-  
+
     const { data, error } = await supabase
       .from("wallets")
-      .select("id, wallet_name, wallet_type, currency, current_balance")
+      .select("id, wallet_name, wallet_type, current_balance, currency")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true });
-  
+
     if (error) {
-      console.error("Wallet fetch error:", error);
+      console.error(error);
       setLoading(false);
       return;
     }
-  
-    const walletRows = (data ?? []) as Wallet[];
-  
-    for (const wallet of walletRows) {
-      try {
-        await recalculateWalletBalance(wallet.id);
-      } catch (error) {
-        console.error("Wallet recalculate error:", error);
-      }
-    }
-  
-    const { data: refreshedData, error: refreshedError } = await supabase
-      .from("wallets")
-      .select("id, wallet_name, wallet_type, currency, current_balance")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: true });
-  
-    if (refreshedError) {
-      console.error("Wallet refetch error:", refreshedError);
-      setLoading(false);
-      return;
-    }
-  
-    setWallets((refreshedData ?? []) as Wallet[]);
+
+    setWallets((data ?? []) as Wallet[]);
     setLoading(false);
   }
 
@@ -77,42 +75,129 @@ export default function WalletsPage() {
     e.preventDefault();
     setSaving(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    if (!user) {
-      setSaving(false);
-      alert("User not found.");
-      return;
+      if (!user) {
+        throw new Error("User not found.");
+      }
+
+      if (!walletName.trim()) {
+        throw new Error("Please enter a wallet name.");
+      }
+
+      if (currentBalance === "" || Number(currentBalance) < 0) {
+        throw new Error("Please enter a valid balance.");
+      }
+
+      const { error } = await supabase.from("wallets").insert({
+        user_id: user.id,
+        wallet_name: walletName.trim(),
+        wallet_type: walletType,
+        current_balance: Number(currentBalance),
+        currency,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setWalletName("");
+      setWalletType("bank");
+      setCurrentBalance("");
+      setCurrency("MYR");
+
+      await fetchWallets();
+      alert("Wallet added successfully.");
+    } catch (error) {
+      alert(getErrorMessage(error));
     }
-
-    const balance = Number(startingBalance || 0);
-
-    const { error } = await supabase.from("wallets").insert({
-      user_id: user.id,
-      wallet_name: walletName,
-      wallet_type: walletType,
-      currency,
-      starting_balance: balance,
-      current_balance: balance,
-    });
 
     setSaving(false);
+  }
+
+  function handleStartEdit(wallet: Wallet) {
+    setEditingId(wallet.id);
+    setEditWalletName(wallet.wallet_name);
+    setEditWalletType(wallet.wallet_type || "bank");
+    setEditCurrentBalance(String(Number(wallet.current_balance || 0)));
+    setEditCurrency(wallet.currency || "MYR");
+  }
+
+  function handleCancelEdit() {
+    setEditingId(null);
+    setEditWalletName("");
+    setEditWalletType("bank");
+    setEditCurrentBalance("");
+    setEditCurrency("MYR");
+  }
+
+  async function handleUpdateWallet(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!editingId) return;
+
+    setSavingEdit(true);
+
+    try {
+      if (!editWalletName.trim()) {
+        throw new Error("Please enter a wallet name.");
+      }
+
+      if (editCurrentBalance === "" || Number(editCurrentBalance) < 0) {
+        throw new Error("Please enter a valid balance.");
+      }
+
+      const { error } = await supabase
+        .from("wallets")
+        .update({
+          wallet_name: editWalletName.trim(),
+          wallet_type: editWalletType,
+          current_balance: Number(editCurrentBalance),
+          currency: editCurrency,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingId);
+
+      if (error) {
+        throw error;
+      }
+
+      await fetchWallets();
+      alert("Wallet updated successfully.");
+      handleCancelEdit();
+    } catch (error) {
+      alert(getErrorMessage(error));
+    }
+
+    setSavingEdit(false);
+  }
+
+  async function handleDeleteWallet(walletId: string) {
+    const confirmed = window.confirm("Delete this wallet?");
+    if (!confirmed) return;
+
+    setDeletingId(walletId);
+
+    const { error } = await supabase.from("wallets").delete().eq("id", walletId);
+
+    setDeletingId(null);
 
     if (error) {
-      alert(error.message);
+      alert(getErrorMessage(error));
       return;
     }
 
-    setWalletName("");
-    setWalletType("Cash");
-    setCurrency("MYR");
-    setStartingBalance("");
-
     await fetchWallets();
-    alert("Wallet added successfully.");
+    alert("Wallet deleted successfully.");
   }
+
+  const totalBalance = useMemo(
+    () => wallets.reduce((sum, wallet) => sum + Number(wallet.current_balance || 0), 0),
+    [wallets]
+  );
 
   if (loading) {
     return (
@@ -128,8 +213,15 @@ export default function WalletsPage() {
         <div className="mb-8">
           <h1 className="text-4xl font-bold">Wallets</h1>
           <p className="mt-2 text-zinc-400">
-            Manage your money across different accounts and wallets.
+            Manage your cash, bank accounts, e-wallets, and cards.
           </p>
+        </div>
+
+        <div className="mb-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+          <p className="text-sm text-zinc-400">Total Wallet Balance</p>
+          <h2 className="mt-2 text-2xl font-semibold">
+            {formatCurrency(totalBalance, "MYR")}
+          </h2>
         </div>
 
         <div className="mb-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
@@ -142,7 +234,7 @@ export default function WalletsPage() {
                 type="text"
                 value={walletName}
                 onChange={(e) => setWalletName(e.target.value)}
-                placeholder="Enter wallet name"
+                placeholder="Example: Maybank, TNG, Cash"
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white outline-none"
               />
             </div>
@@ -151,14 +243,30 @@ export default function WalletsPage() {
               <label className="mb-2 block text-sm">Wallet Type</label>
               <select
                 value={walletType}
-                onChange={(e) => setWalletType(e.target.value)}
+                onChange={(e) =>
+                  setWalletType(
+                    e.target.value as "cash" | "bank" | "ewallet" | "credit_card" | "other"
+                  )
+                }
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white outline-none"
               >
-                <option>Cash</option>
-                <option>Bank Account</option>
-                <option>E-Wallet</option>
-                <option>Credit Card</option>
+                <option value="cash">Cash</option>
+                <option value="bank">Bank</option>
+                <option value="ewallet">E-Wallet</option>
+                <option value="credit_card">Credit Card</option>
+                <option value="other">Other</option>
               </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm">Current Balance</label>
+              <input
+                type="number"
+                value={currentBalance}
+                onChange={(e) => setCurrentBalance(e.target.value)}
+                placeholder="Enter balance"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white outline-none"
+              />
             </div>
 
             <div>
@@ -174,23 +282,12 @@ export default function WalletsPage() {
               </select>
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm">Starting Balance</label>
-              <input
-                type="number"
-                value={startingBalance}
-                onChange={(e) => setStartingBalance(e.target.value)}
-                placeholder="Enter starting balance"
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white outline-none"
-              />
-            </div>
-
             <button
               type="submit"
               disabled={saving}
               className="w-full rounded-full bg-white px-6 py-3 font-semibold text-black disabled:opacity-50"
             >
-              {saving ? "Adding Wallet..." : "Add Wallet"}
+              {saving ? "Adding..." : "Add Wallet"}
             </button>
           </form>
         </div>
@@ -200,7 +297,7 @@ export default function WalletsPage() {
             No wallets yet.
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             {wallets.map((wallet) => (
               <div
                 key={wallet.id}
@@ -208,12 +305,106 @@ export default function WalletsPage() {
               >
                 <p className="text-sm text-zinc-400">{wallet.wallet_type}</p>
                 <h2 className="mt-2 text-2xl font-semibold">{wallet.wallet_name}</h2>
-                <p className="mt-2 text-sm text-zinc-500">{wallet.currency || "MYR"}</p>
-                <p className="mt-6 text-2xl font-bold">
-                  {(wallet.currency || "MYR")} {Number(wallet.current_balance || 0).toFixed(2)}
+                <p className="mt-3 text-sm text-zinc-500">
+                  Balance: {formatCurrency(Number(wallet.current_balance || 0), wallet.currency || "MYR")}
                 </p>
+
+                <div className="mt-6 flex gap-4">
+                  <button
+                    onClick={() => handleStartEdit(wallet)}
+                    className="text-blue-400 hover:text-blue-300"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteWallet(wallet.id)}
+                    disabled={deletingId === wallet.id}
+                    className="text-red-400 hover:text-red-300 disabled:opacity-50"
+                  >
+                    {deletingId === wallet.id ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {editingId && (
+          <div className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+            <h2 className="mb-4 text-2xl font-semibold">Edit Wallet</h2>
+
+            <form className="space-y-4" onSubmit={handleUpdateWallet}>
+              <div>
+                <label className="mb-2 block text-sm">Wallet Name</label>
+                <input
+                  type="text"
+                  value={editWalletName}
+                  onChange={(e) => setEditWalletName(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm">Wallet Type</label>
+                <select
+                  value={editWalletType}
+                  onChange={(e) =>
+                    setEditWalletType(
+                      e.target.value as "cash" | "bank" | "ewallet" | "credit_card" | "other"
+                    )
+                  }
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white outline-none"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="bank">Bank</option>
+                  <option value="ewallet">E-Wallet</option>
+                  <option value="credit_card">Credit Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm">Current Balance</label>
+                <input
+                  type="number"
+                  value={editCurrentBalance}
+                  onChange={(e) => setEditCurrentBalance(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm">Currency</label>
+                <select
+                  value={editCurrency}
+                  onChange={(e) => setEditCurrency(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 text-white outline-none"
+                >
+                  <option>MYR</option>
+                  <option>USD</option>
+                  <option>EUR</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="rounded-full bg-white px-6 py-3 font-semibold text-black disabled:opacity-50"
+                >
+                  {savingEdit ? "Saving..." : "Save Changes"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="rounded-full border border-zinc-700 px-6 py-3 font-semibold text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         )}
       </div>
